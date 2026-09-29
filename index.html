@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Gold</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #000;
+    color: white;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Arial, sans-serif;
+}
+
+.container {
+    max-width: 600px;
+    margin: auto;
+    padding: 45px 22px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.title {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.live {
+    font-size: 13px;
+    color: #30d158;
+}
+
+.label {
+    margin-top: 55px;
+    color: #8e8e93;
+    font-size: 15px;
+}
+
+.value {
+    font-size: 62px;
+    font-weight: 750;
+    letter-spacing: -3px;
+    margin-top: 8px;
+}
+
+.currency {
+    color: #8e8e93;
+    font-size: 20px;
+}
+
+.change {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 15px;
+}
+
+.up {
+    color: #30d158;
+}
+
+.down {
+    color: #ff453a;
+}
+
+.chartBox {
+    margin-top: 45px;
+    height: 220px;
+}
+
+canvas {
+    width: 100%;
+    height: 100%;
+}
+
+.info {
+    margin-top: 45px;
+    background: #111113;
+    border-radius: 18px;
+    padding: 20px;
+}
+
+.row {
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 0;
+    font-size: 15px;
+}
+
+.left {
+    color: #8e8e93;
+}
+
+.footer {
+    text-align: center;
+    margin-top: 25px;
+    color: #636366;
+    font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+    <div class="title">MY GOLD</div>
+    <div class="live" id="status">● LIVE</div>
+</div>
+
+<div class="label">Estimated market value</div>
+
+<div class="value" id="value">Loading...</div>
+
+<div class="currency">AED</div>
+
+<div class="change" id="change">
+Connecting to gold market...
+</div>
+
+<div class="chartBox">
+    <canvas id="chart"></canvas>
+</div>
+
+<div class="info">
+
+<div class="row">
+    <span class="left">24K gold</span>
+    <span>43.5 g</span>
+</div>
+
+<div class="row">
+    <span class="left">21K gold</span>
+    <span>123.6 g</span>
+</div>
+
+<div class="row">
+    <span class="left">Pure-gold equivalent</span>
+    <span>151.65 g</span>
+</div>
+
+<div class="row">
+    <span class="left">Gold spot</span>
+    <span id="spot">—</span>
+</div>
+
+<div class="row">
+    <span class="left">Last update</span>
+    <span id="time">—</span>
+</div>
+
+</div>
+
+<div class="footer">
+Spot-metal estimate. Dealer buy/sell spreads and premiums are not included.
+</div>
+
+</div>
+
+<script>
+
+const GOLD_24K = 43.5;
+const GOLD_21K = 123.6;
+
+const PURE_GOLD =
+    GOLD_24K +
+    GOLD_21K * (21 / 24);
+
+const GRAMS_PER_TROY_OUNCE = 31.1034768;
+
+/* AED is pegged to USD */
+const AED_PER_USD = 3.6725;
+
+let previousValue = null;
+
+let chartValues = [];
+
+const valueElement =
+    document.getElementById("value");
+
+const changeElement =
+    document.getElementById("change");
+
+const spotElement =
+    document.getElementById("spot");
+
+const timeElement =
+    document.getElementById("time");
+
+const statusElement =
+    document.getElementById("status");
+
+const canvas =
+    document.getElementById("chart");
+
+const ctx =
+    canvas.getContext("2d");
+
+
+function formatMoney(number) {
+
+    return new Intl.NumberFormat(
+        "en-AE",
+        {
+            maximumFractionDigits: 0
+        }
+    ).format(number);
+
+}
+
+
+function drawChart() {
+
+    const ratio =
+        window.devicePixelRatio || 1;
+
+    canvas.width =
+        canvas.clientWidth * ratio;
+
+    canvas.height =
+        canvas.clientHeight * ratio;
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    if (chartValues.length < 2)
+        return;
+
+    const min =
+        Math.min(...chartValues);
+
+    const max =
+        Math.max(...chartValues);
+
+    const range =
+        max - min || 1;
+
+    ctx.beginPath();
+
+    chartValues.forEach(
+        (price, index) => {
+
+            const x =
+                index /
+                (chartValues.length - 1) *
+                canvas.width;
+
+            const y =
+                canvas.height -
+                ((price - min) / range)
+                * canvas.height
+                * 0.85 -
+                canvas.height * 0.075;
+
+            if (index === 0) {
+
+                ctx.moveTo(x, y);
+
+            } else {
+
+                ctx.lineTo(x, y);
+
+            }
+
+        }
+    );
+
+    ctx.lineWidth = 4 * ratio;
+
+    const rising =
+        chartValues[
+            chartValues.length - 1
+        ] >= chartValues[0];
+
+    ctx.strokeStyle =
+        rising
+        ? "#30d158"
+        : "#ff453a";
+
+    ctx.stroke();
+
+}
+
+
+async function updateGold() {
+
+    try {
+
+        const response =
+            await fetch(
+                "https://api.gold-api.com/price/XAU",
+                {
+                    cache: "no-store"
+                }
+            );
+
+        if (!response.ok)
+            throw new Error();
+
+        const data =
+            await response.json();
+
+        const goldUSDPerOz =
+            Number(data.price);
+
+        const portfolioAED =
+            goldUSDPerOz
+            / GRAMS_PER_TROY_OUNCE
+            * PURE_GOLD
+            * AED_PER_USD;
+
+        valueElement.textContent =
+            formatMoney(portfolioAED);
+
+        spotElement.textContent =
+            "$" +
+            goldUSDPerOz.toLocaleString(
+                "en-US",
+                {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }
+            ) +
+            " / oz";
+
+        timeElement.textContent =
+            new Date()
+            .toLocaleTimeString(
+                [],
+                {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit"
+                }
+            );
+
+        if (previousValue !== null) {
+
+            const difference =
+                portfolioAED -
+                previousValue;
+
+            if (difference > 0.005) {
+
+                changeElement.className =
+                    "change up";
+
+                changeElement.textContent =
+                    "↑ +" +
+                    difference.toFixed(2) +
+                    " AED";
+
+            }
+
+            else if (difference < -0.005) {
+
+                changeElement.className =
+                    "change down";
+
+                changeElement.textContent =
+                    "↓ " +
+                    difference.toFixed(2) +
+                    " AED";
+
+            }
+
+            else {
+
+                changeElement.className =
+                    "change";
+
+                changeElement.textContent =
+                    "— No new price move";
+
+            }
+
+        }
+
+        previousValue =
+            portfolioAED;
+
+        chartValues.push(
+            portfolioAED
+        );
+
+        if (chartValues.length > 180) {
+
+            chartValues.shift();
+
+        }
+
+        drawChart();
+
+        statusElement.textContent =
+            "● LIVE";
+
+        statusElement.style.color =
+            "#30d158";
+
+    }
+
+    catch (error) {
+
+        statusElement.textContent =
+            "● RECONNECTING";
+
+        statusElement.style.color =
+            "#ff9f0a";
+
+        changeElement.textContent =
+            "Connecting to gold market...";
+
+    }
+
+}
+
+
+/* update immediately */
+updateGold();
+
+/* check market every second */
+setInterval(
+    updateGold,
+    1000
+);
+
+</script>
+
+</body>
+</html>
